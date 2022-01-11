@@ -25,7 +25,6 @@ import traceback
 import string
 import math
 from datetime import datetime
-import pymysql
 import importlib
 import seaborn as sns
 from sklearn.linear_model import LogisticRegression, LogisticRegressionCV, LassoCV, RidgeClassifierCV
