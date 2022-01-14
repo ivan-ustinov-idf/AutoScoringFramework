@@ -758,3 +758,70 @@ def grid_search_heatmap(X_train: pd.DataFrame, y_train: pd.Series, X_test: pd.Da
     plt.show()
 
     return metrics.sort_values(by='gini_test', ascending=False).iloc[0].to_dict()
+
+
+def save_encoding_excel(dict_cat_encoding: dict, dict_nan_encoding: dict, name: str='result_rules/encoding_methods'):
+    '''
+    Данная функция используется во время построения правил
+    с помощью дерефьев решений. С помощью её можно сохранить
+    методы кодировки категориальных переменных и заполнения NaN
+    значений в excel файл.
+
+    '''
+    nan_dataframe = pd.DataFrame(
+        [[key, val] for key, val in dict_nan_encoding.items()],
+        columns=['feature', 'value for NaN']
+    )
+
+    # Сохраним значения для кодировки NaN в отдельный excel файл
+    writer = pd.ExcelWriter('{}.xlsx'.format(name), engine='xlsxwriter')
+    nan_dataframe.to_excel(writer, sheet_name='NaN encoding', index=False)
+    worksheet2 = writer.sheets['NaN encoding']
+    worksheet2.set_column('A:A', 35)
+    worksheet2.set_column('B:B', 25)
+
+    for i, (feat, enc_dataframe) in enumerate(dict_cat_encoding.items()):
+        enc_dataframe.to_excel(writer, sheet_name='Category encoding', index=False,
+                                startcol=i*3, startrow=0)
+
+
+    writer.save()
+    writer.close()
+
+
+def save_selection_stages(selection_stages: dict, name: str='result/selection_stages.xlsx'):
+    '''
+    Сохрянем стадии отбора признаков в excel файл
+    selection_stages: dict, словарь, в котором перечислены
+        наименование стадии отбора признаков, и набор признаков,
+        который после этой стадии остался
+        '<имя>': <list массив названий признаков>
+
+    '''
+    writer = pd.ExcelWriter(name, engine='xlsxwriter')
+    for i, (stage_name, stage_feats) in enumerate(selection_stages.items()):
+        if i == 0:
+            continue
+        
+        # Формируем набор признаков которы был до, и который остался после текущего этапа отбора.
+        before_feats = sorted(var_name_original(list(selection_stages.values())[i-1]))
+        selected_feats = set(var_name_original(list(stage_feats)))
+        after_feats = []
+
+        # Формируем набор оставшихся признаков, чтобы он был в той же последовательности.
+        for feat in before_feats:
+            if feat not in selected_feats:
+                after_feats.append('')
+            else:
+                after_feats.append(feat)
+
+        df_selection = pd.DataFrame([before_feats, after_feats]).T
+        df_selection.columns = [f'до {stage_name}', f'после {stage_name}']
+
+        df_selection.to_excel(writer, sheet_name=stage_name[:30])
+        worksheet2 = writer.sheets[stage_name[:30]]
+        worksheet2.set_column('B:B', 35)
+        worksheet2.set_column('C:C', 35)
+
+    writer.save()
+    writer.close()
