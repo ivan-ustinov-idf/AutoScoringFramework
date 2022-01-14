@@ -445,7 +445,8 @@ def construction_binning(df: pd.DataFrame, features: list, target: str='target',
     )
 
     iv_df = construction_iv_df_from_autowoe(df, auto_woe, target, features_type, features, nan_to_woe, else_to_woe)
-    dropped_feats = list(set(features) - set(iv_df['VAR_NAME'].unique()))
+    dropped_feat_names = list(set(features) - set(iv_df['VAR_NAME'].unique()))
+    dropped_feats = pd.DataFrame([[feat, auto_woe.feature_history[feat]] for feat in dropped_feat_names], columns=['VAR_NAME', 'reason'])
 
     feats = pd.merge(
         pd.DataFrame([[col, val] for col, val in auto_woe.feature_history.items()], columns=['VAR_NAME', 'reason']),
