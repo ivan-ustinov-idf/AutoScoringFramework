@@ -643,7 +643,7 @@ def feature_include2(X_all, y_all, vars_current, iv_df, params, sample_weight=No
 
 
 def construct_df3(vars_woe, logreg, df_req, X_train, X_test, df_train, df_test, X_out=None, df_out=None,
-                 date_name='date_requested', target='target'):
+                 date_name='date_requested', target='target', intervals='month'):
     vars = [var.replace('WOE_', '') for var in vars_woe]
 
     if X_out is None:
@@ -663,7 +663,13 @@ def construct_df3(vars_woe, logreg, df_req, X_train, X_test, df_train, df_test, 
 
     df3 = df2.copy()
     df3 = pd.merge(df3.drop([date_name], axis=1), df_req, on='credit_id')
-    df3['requested_month_year'] = df3[date_name].map(lambda x: str(x)[:7])
+    # df3['requested_month_year'] = df3[date_name].map(lambda x: str(x)[:7])
+    if intervals == 'month':
+        df3['requested_month_year'] = df3[date_name].map(lambda x: str(x)[:7])
+    elif intervals == 'week':
+        df3['requested_month_year'] = df3[date_name].dt.strftime('%Y-%U')
+    else:
+        df3['requested_month_year'] = df3[date_name].map(lambda x: str(x)[:7])
 
     df3[target] = df3[target].astype(float)
     df3['PD'] = logreg.predict_proba(df3[vars_woe])[:,1] 

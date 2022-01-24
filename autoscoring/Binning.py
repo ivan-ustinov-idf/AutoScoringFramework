@@ -592,6 +592,5 @@ def correct_binning_dict(new_bins: dict, iv_df: pd.DataFrame, df_train: pd.DataF
             print(col)
             display(iv_df[iv_df['VAR_NAME'] == col])
             raise(e)
-        
     
     return iv_df
