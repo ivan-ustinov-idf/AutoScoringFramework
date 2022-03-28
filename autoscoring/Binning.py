@@ -21,8 +21,17 @@ def woe_transformation(x, iv_col):
                 if x in set(value.split(' | ')):
                     tmp = iv_col.iloc[i]
                     break
+                
+            # Надо применить _ELSE_, т.к. данная категория не нашлась.
+            if tmp.shape[0] == 0:
+                for i, value in enumerate(iv_col['MIN_VALUE'].values):
+                    if '_ELSE_' in set(value.split(' | ')):
+                        tmp = iv_col.iloc[i]
+                        break
+
         q = float(tmp.WOE)
         return q
+        
     elif pd.isna(x) == True:
         # Обраотка NaN для непрерывных значений
         q = float(iv_col[pd.isna(iv_col.MAX_VALUE) == True].WOE)

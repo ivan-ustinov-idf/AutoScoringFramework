@@ -21,6 +21,10 @@ def var_name_original(vars_woe):
     return [var.replace('WOE_', '') for var in vars_woe]
 
 
+def add_mandatory_feats(vars, mandatory_feats):
+    return list(set(list(vars) + list(mandatory_feats)))
+
+
 # Преобразовываем название категориальных признаков для df_out и остальных
 def change_value_name(name, value_names):
     for var in value_names['MIN_VALUE'].values:
@@ -434,8 +438,8 @@ def rf_feature_selection(df: pd.DataFrame, y: pd.Series, top_n: int=20) -> pd.Da
 
 
 def gini_month_selection(X: pd.DataFrame, df: pd.DataFrame, gini_min: float=0.05,
-                         num_bad_months: int=2, target_name: str='target',
-                        date_name: str='date_requested') -> Tuple[list, pd.DataFrame]:
+                         num_bad_intervals: int=2, target_name: str='target',
+                        date_name: str='date_requested', intervals: str='month') -> Tuple[list, pd.DataFrame]:
     '''
     Отбор признаков по однофакторной оценке gini по месяцам.
     Отбираем переменные, для которых для каждого месяца gini выше gini_min,
@@ -444,15 +448,21 @@ def gini_month_selection(X: pd.DataFrame, df: pd.DataFrame, gini_min: float=0.05
     X: pd.DataFrame тренировочный набор преобразованных данных (X_train)
     df: pd.DataFrame тренировочный набор данных, содержащих date_requested и target (df_train)
     gini_min: минимальный порог gini для отбора
-    num_bad_months: количество месяцев, в которых gini может быть меньше заданного
+    num_bad_intervals: количество интервалов времени, в которых gini может быть меньше заданного
     target_name: имя таргета в df
+    intervals: интервал времени, который берём - month или week
 
     Пример:
         gini_feats, df_gini_months = new_functions.gini_month_selection(X_train, df_train)
 
     '''
     df_x_month = pd.concat([X.reset_index(drop=True), df[[date_name, target_name]].reset_index(drop=True)], axis=1)
-    df_x_month['requested_month_year'] = df_x_month[date_name].map(lambda x: str(x)[:7])
+    if intervals == 'month':
+        df_x_month['requested_month_year'] = df_x_month[date_name].map(lambda x: str(x)[:7])
+    elif intervals == 'week':
+        df_x_month['requested_month_year'] = df_x_month[date_name].dt.strftime('%Y-%U')
+    else:
+        df_x_month['requested_month_year'] = df_x_month[date_name].map(lambda x: str(x)[:7])
     vars_woe = X.columns
 
     requested_month_year = np.sort(df_x_month['requested_month_year'].unique())
@@ -480,7 +490,7 @@ def gini_month_selection(X: pd.DataFrame, df: pd.DataFrame, gini_min: float=0.05
             df_gini_months.loc[x, month_year] = Gini_train
 
     # Отбираем признаки, для которых количество плохо предсказанных месяцев меньше заданного числа.
-    good_features = df_gini_months[((df_gini_months < gini_min).sum(axis=1) <= num_bad_months)].index
+    good_features = df_gini_months[((df_gini_months < gini_min).sum(axis=1) <= num_bad_intervals)].index
 
     df_gini_months.reset_index(inplace=True)
     df_gini_months = df_gini_months.rename(columns={'index': 'vars'})
@@ -662,7 +672,7 @@ def construct_df3(vars_woe, logreg, df_req, X_train, X_test, df_train, df_test, 
     feat = feat.append(pd.DataFrame([[logreg.intercept_[0], '_INTERCEPT_']], columns=['Coefficient', 'Feature']), ignore_index=True)
 
     df3 = df2.copy()
-    df3 = pd.merge(df3.drop([date_name], axis=1), df_req, on='credit_id')
+    # df3 = pd.merge(df3.drop([date_name], axis=1), df_req, on='credit_id')
     # df3['requested_month_year'] = df3[date_name].map(lambda x: str(x)[:7])
     if intervals == 'month':
         df3['requested_month_year'] = df3[date_name].map(lambda x: str(x)[:7])

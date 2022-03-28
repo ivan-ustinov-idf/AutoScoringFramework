@@ -251,9 +251,11 @@ def replace_not_frequent(df, cols, perc_min=5, value_to_replace = "_ELSE_"):
     else_df = else_df.set_index('var')
     return df, else_df
     
-def replace_not_frequent_2(df, cols, num_min=100, value_to_replace = "_ELSE_"):
+def replace_not_frequent_2(df, cols, num_min=100, value_to_replace = "_ELSE_", ignore_vars=[]):
     else_df = pd.DataFrame(columns=['var', 'list'])
     for i in cols:
+        if i in ignore_vars:
+            continue
         if i != 'date_requested' and i != 'credit_id':
             t = df[i].value_counts()
             q = list(t[t.values < num_min].index)
@@ -982,7 +984,8 @@ def export_to_excel(DSL, SQL, X_train, X_test, y_train, y_test, y, df3, iv_df, i
                     Ginis, table, scores, feat, features_of_model, clf_lr, 
                     gini_by_vars=None, df_gini_months=None, PV=None,
                     X_out=None, y_out=None, name='Scoring',
-                    pic_folder='', target_description='', model_description=''):
+                    pic_folder='', target_description='',
+                    model_description='', date_name='date_requested'):
     #WRITING
     writer = pd.ExcelWriter('{}.xlsx'.format(name), engine='xlsxwriter')
 
@@ -1053,8 +1056,8 @@ def export_to_excel(DSL, SQL, X_train, X_test, y_train, y_test, y, df3, iv_df, i
     worksheet.write('A24', 'Описание модели')
     worksheet.write('B24', model_description)
     worksheet.write('A25', 'Времменые рамки')
-    start_date = df3['date_requested'].min().strftime('%Y-%m-%d')
-    end_date = df3['date_requested'].max().strftime('%Y-%m-%d')
+    start_date = df3[date_name].min().strftime('%Y-%m-%d')
+    end_date = df3[date_name].max().strftime('%Y-%m-%d')
     worksheet.write('B25', f'from {start_date} to {end_date}')
 
     # Sheet for feature description
