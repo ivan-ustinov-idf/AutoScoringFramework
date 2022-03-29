@@ -136,6 +136,13 @@ def construction_iv_df_from_autowoe(df, auto_woe, TARGET, features_type, feature
             split[np.isclose(split, 1e-35)] = 0.00001
 
             for i, val in enumerate(split):
+                # Из-за округлений границы могут начать совпадать для разбиений.
+                # Например были [0, 0.000001, 200] стало после округлений -> [1e-5, 1e-5, 200]
+                # Проще пропустить этот частный случай мне кажется.
+                if i != 0 and split[i] == split[i-1]:
+                    print(f'WARNING  Skiping split in feature {feature}, split: {split}, {i} and {i-1} are equal')
+                    continue
+
                 idx += 1
                 feat_idxs.append(idx)
                 iv_df.loc[idx, 'VAR_NAME'] = feature
