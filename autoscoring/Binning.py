@@ -506,13 +506,15 @@ def change_feature_binning(iv_df, iv_df_old, df_train, col):
         iv_df.loc[i, 'DR'] = float(val_count.sum()) / val_count.count()
         iv_df.loc[i, 'NONEVENT'] = val_count.count() - val_count.sum()
 
-    column_condition = (iv_df['VAR_NAME'] == col) & (iv_df['MIN_VALUE'].isna() == False)
-    d3 = iv_df.loc[column_condition]
-    iv_df.loc[column_condition, "EVENT_RATE"] = d3.EVENT / d3.EVENT.sum()
-    iv_df.loc[column_condition, "NON_EVENT_RATE"] = d3.NONEVENT / d3.NONEVENT.sum()
+    # column_condition = (iv_df['VAR_NAME'] == col) & (iv_df['MIN_VALUE'].isna() == False)
+    column_condition_wout_nan = (iv_df['VAR_NAME'] == col) & (iv_df['MIN_VALUE'].isna() == False)
+    column_condition_with_nan = (iv_df['VAR_NAME'] == col)
+    d3 = iv_df.loc[column_condition_with_nan]
+    iv_df.loc[column_condition_with_nan, "EVENT_RATE"] = d3.EVENT / d3.EVENT.sum()
+    iv_df.loc[column_condition_with_nan, "NON_EVENT_RATE"] = d3.NONEVENT / d3.NONEVENT.sum()
 
-    d3 = iv_df.loc[column_condition]
-    iv_df.loc[column_condition, "WOE"] = np.log((d3.NON_EVENT_RATE / d3.EVENT_RATE).astype(float))
+    d3 = iv_df.loc[column_condition_wout_nan]
+    iv_df.loc[column_condition_wout_nan, "WOE"] = np.log((d3.NON_EVENT_RATE / d3.EVENT_RATE).astype(float))
 
     # Сохраняем тот резульатт для NaN, который предсатвлен в изначальном excel файле.
     iv_df.loc[(iv_df['VAR_NAME'] == col) & (iv_df['MIN_VALUE'].isna())] = iv_df_old[(iv_df['VAR_NAME'] == col) & (iv_df['MIN_VALUE'].isna())]

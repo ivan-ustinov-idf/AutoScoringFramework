@@ -456,7 +456,7 @@ def create_gini_stability(df, clf_lr, X_train, date_name='requested_month_year')
     return Ginis
 
 ################## Graphs Gini and Score To Excel ######################
-def gini_stability_chart(Ginis, pic_name='gini_stability', pic_folder=''):
+def gini_stability_chart(Ginis, pic_name='gini_stability', pic_folder='', period_date=1):
     ind = np.arange(len(Ginis.index)) 
     width = 0.6
     fig, ax1 = plt.subplots(figsize=(12, 7))
@@ -468,7 +468,8 @@ def gini_stability_chart(Ginis, pic_name='gini_stability', pic_folder=''):
     ax2.set_ylabel('Gini', fontsize=15)
 
     plt.title('Gini Stability', fontsize=15) 
-    plt.xticks(ind, Ginis.index)
+    # plt.xticks(ind, Ginis.index)
+    plt.xticks(ind[::period_date], Ginis.index[::period_date])
     ax2.plot(ind, Ginis['Gini'], marker='o', color='red')
     plt.ylim([0, 1])
     plt.legend((p2[0], p1[0]), ('bad', 'good'), loc='best', fontsize=10)

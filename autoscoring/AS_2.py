@@ -13,8 +13,9 @@ from sklearn.decomposition import PCA
 from sklearn.linear_model import LogisticRegression
 import matplotlib.pyplot as plt
 import seaborn as sns
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 from .AS import coef_woe_columns
+from .Binning import construction_binning
 
 
 def var_name_original(vars_woe):
@@ -841,3 +842,159 @@ def save_selection_stages(selection_stages: dict, name: str='result/selection_st
 
     writer.save()
     writer.close()
+
+
+def create_categorical_pair_feats(df: pd.DataFrame, cat_cols_to_process: List[str], max_categories: int=10,
+                                 separator: str='_and_', threshold_IV: float=0.01) -> Tuple[List[str], List[str], pd.DataFrame]:
+    '''
+    Формируем декартово произведение категориальных признаков.
+    И отбираем те признаки, которые после преобразования имеют IV
+    больше чем IV исходных признаков с учетом .
+
+    '''
+
+    # Считаем IV до создания парных признаков.
+    iv_df_cat_cols, _, _, _, auto_woe = construction_binning(df, cat_cols_to_process, 'target',
+                                                            max_bin_count=5,
+                                                            min_bin_size=0.05,
+                                                            nan_to_woe='max_cat',
+                                                            else_to_woe='max_cat',
+                                                            monotonic=False,
+                                                            n_jobs=-1)
+
+    # Удалим признаки, в которых слишком много категорий, чтобы не была большой гранулярности.
+    cat_cols_to_process_new = []
+    for col in cat_cols_to_process:
+        if df[col].nunique() <= max_categories:
+            cat_cols_to_process_new.append(col)
+
+    cat_cols_to_process = cat_cols_to_process_new.copy()
+
+    # Сформируем парные признаки.
+    pair_vars = []
+    for i, col_1 in enumerate(cat_cols_to_process):
+        for j, col_2 in enumerate(cat_cols_to_process):
+            if j <= i:
+                continue
+
+            _var_name = col_1 + separator + col_2
+            df[_var_name] = df[col_1] + separator + df[col_2]
+            pair_vars.append(_var_name)
+
+    # Считаем IV после формирования парных признаков.
+    iv_df_pair_vars, _, _, _, auto_woe = construction_binning(df, pair_vars, 'target',
+                                                            max_bin_count=5,
+                                                            min_bin_size=0.05,
+                                                            nan_to_woe='max_cat',
+                                                            else_to_woe='max_cat',
+                                                            monotonic=False,
+                                                            n_jobs=-1)
+    
+    # Отбираем признакие, для которых IV после преобразование стало выше, чем IV исходных признаков.
+    good_pair_vars = []
+    for var in pair_vars:
+        iv_var_values = iv_df_pair_vars[iv_df_pair_vars['VAR_NAME'] == var]['IV'].values
+        if iv_var_values.shape[0] == 0:
+            continue
+
+        IV_after = iv_var_values[0]
+
+        col_1, col_2 = var.split(separator)
+        IV_before_col1 = iv_df_cat_cols[iv_df_cat_cols['VAR_NAME'] == col_1]['IV'].values[0]
+        IV_before_col2 = iv_df_cat_cols[iv_df_cat_cols['VAR_NAME'] == col_2]['IV'].values[0]
+
+        if IV_after >= IV_before_col1 + threshold_IV and IV_after >= IV_before_col2 + threshold_IV:
+            good_pair_vars.append(var)
+
+    bad_pair_vars = list(set(pair_vars) - set(good_pair_vars))
+    df.drop(bad_pair_vars, axis=1, inplace=True)
+
+    return good_pair_vars, bad_pair_vars, df
+
+
+def delete_corr_feats_w_groups(df: pd.DataFrame, corr_cut_off: float, IV: pd.DataFrame) -> Tuple[List[str], Dict[str, List]]:
+    '''
+    Считаем корреляции и определяем группы признаков, которые скоррелирвоаны между собой.
+    Для этого сортируем по IV. Потом смотрим те признаки, которые скоррелированы,.
+    Далее всю эту группу признаков объединяем, чтобы потом можно вместо исходного признака
+    найти скоррелированный с ним, который мб будет лучше перфомить.
+
+    '''
+
+    corr_matrix = df.corr().abs()
+
+    corr_matrix = df[vars].corr().abs()
+    # Сортируем по IV, чтобы потом по ним пройтись в порядке убывания IV.
+    IV_sort = IV[IV['VAR_NAME'].isin(corr_matrix.columns)].sort_values(by='IV')['VAR_NAME'].values
+    corr_matrix = corr_matrix[IV_sort]
+
+    # Оставляем только верхний триугольник матрицы.
+    corr_matrix = corr_matrix.abs()
+    upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(np.bool))
+
+    IV_dict = {}
+    for i, row in IV.iterrows():
+        IV_dict[row['VAR_NAME']] = row['IV']
+
+    connections_vars = {}
+    good_vars = []
+    already_used_vars = set()
+
+    # Проходим по признакам, если он ещё не принадлежит какой-то группе,
+    # ищем всех его соседей.
+    for var in corr_matrix.columns[::-1]:
+        if var in already_used_vars:
+            continue
+
+        connections_vars[var] = []
+        good_vars.append(var)
+        already_used_vars.add(var)
+
+        queue = list(upper[upper[var] >= corr_cut_off].index)
+        # Проходимся по всем соседям (скоррелированным признакам) текущего признака.
+        for var2 in queue:
+            if var2 in already_used_vars or IV_dict[var] < IV_dict[var2]:
+                continue
+            
+            connections_vars[var].append(var2)
+            already_used_vars.add(var2)
+
+    return good_vars, connections_vars
+
+
+def feature_include_correlated(X_all, y_all, curr_var, vars_woe, params, connections_vars):
+    '''
+    Есил до этого посчитали словарь connections_vars, в котором
+    есть список признаков, которые скоррелированы с данным признаком,
+    то можно посмотреть, мб какой-то из этих признаков лучше подходит
+    и дает больше gini.
+
+    '''
+    df_var_ginis = pd.DataFrame(columns=['var_name', 'gini_train', 'gini_test'])
+
+    X_train, X_test, X_out = X_all[0], X_all[1], X_all[2]
+    y_train, y_test, y_out = y_all[0], y_all[1], y_all[2]
+
+    for i, var in enumerate(connections_vars[curr_var] + [curr_var]):
+        curr_var_woe = 'WOE_' + curr_var
+        __vars_current = np.delete(vars_woe, np.where(np.array(vars_woe) == curr_var_woe))
+        __vars_current = np.append(__vars_current, 'WOE_' + var)
+
+        _logreg = LogisticRegression(**params).fit(
+                X_train[__vars_current],
+                y_train,
+            )
+
+        predict_proba_train = _logreg.predict_proba(X_train[__vars_current])[:, 1]
+        predict_proba_test = _logreg.predict_proba(X_test[__vars_current])[:, 1]
+        predict_proba_out = _logreg.predict_proba(X_out[__vars_current])[:, 1]
+
+        df_var_ginis.loc[i, 'var_name'] = var
+        df_var_ginis.loc[i, 'gini_train'] = round(2 * roc_auc_score(y_train, predict_proba_train) - 1, 3)
+        df_var_ginis.loc[i, 'gini_test'] = round(2 * roc_auc_score(y_test, predict_proba_test) - 1, 3)
+        
+        if X_all[2] is not None and y_all[2] is not None:
+            predict_proba_out = _logreg.predict_proba(X_out[__vars_current])[:, 1]
+            df_var_ginis.loc[i, 'gini_out'] =  2 * roc_auc_score(y_out, predict_proba_out) - 1 
+
+    return df_var_ginis
