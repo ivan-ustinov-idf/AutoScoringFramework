@@ -796,9 +796,10 @@ def generate_DSL(ivs: pd.DataFrame, feat: pd.DataFrame, nan_to_woe: str='max', e
     DSL+=nums
     try:DSL+=cats
     except: pass
+    # !! Раньше почему-то была формула: 1.0 / (1.0 + Math.exp(-1 * score.doubleValue())) - но тут не должно быть -1 по логике???!?!
     DSL+='''
         result {
-            new ScoringResult((int) Math.round((1.0 / (1.0 + Math.exp(-1 * score.doubleValue())) * 1000)))
+            new ScoringResult((int) Math.round((1.0 / (1.0 + Math.exp( score.doubleValue() )) * 1000)))
         }
     }
     '''
@@ -835,12 +836,12 @@ def generate_SQL(ivs: pd.DataFrame, feat: pd.DataFrame, nan_to_woe: str='max', e
     num_vars = list(iv_sql[iv_sql.type=='Numeric'].VAR_NAME.drop_duplicates())
 
     sql = '''SELECT sc.*,
-        round((1 / (1 + exp((-1)*({}
-    '''.format(abs(feat[feat.Feature=='_INTERCEPT_'].Coefficient.values[0]))
+        round((1 / (1 + exp(({}
+    '''.format(feat[feat.Feature=='_INTERCEPT_'].Coefficient.values[0])
     for i in range(len(feat)):
         if feat.Feature[i]=='_INTERCEPT_': pass
         else:
-            sql+='''+ -{}*{} '''.format(feat.Coefficient[i], feat.Feature[i])
+            sql+='''+ {}*{} '''.format(feat.Coefficient[i], feat.Feature[i])
 
     sql+=''')))) * 1000) as Scoring
     FROM
@@ -979,7 +980,7 @@ def generate_SQL(ivs: pd.DataFrame, feat: pd.DataFrame, nan_to_woe: str='max', e
     sql+='''
         FROM'''
 
-    return sql
+    return sql.replace('+ --', '+ ').replace('+ -', '- ')
 
 def export_to_excel(DSL, SQL, X_train, X_test, y_train, y_test, y, df3, iv_df, ivs,
                     Ginis, table, scores, feat, features_of_model, clf_lr, 
