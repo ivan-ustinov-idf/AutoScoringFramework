@@ -133,7 +133,10 @@ def construction_iv_df_from_autowoe(df, auto_woe, TARGET, features_type, feature
 
         if features_type[feature] == 'real':
 
-            split[np.isclose(split, 1e-35)] = 0.00001
+            # Учитываем два случая, когда может быть близкое к нулю отрицательное число
+            # и близкое к нулю положительное число.
+            split[np.isclose(split, 1e-35) & (split < 0)] = -0.00001
+            split[np.isclose(split, 1e-35) & (split > 0)] = 0.00001
 
             for i, val in enumerate(split):
                 # Из-за округлений границы могут начать совпадать для разбиений.
