@@ -311,7 +311,7 @@ def delete_correlated_features(df, cut_off=0.75, is_plot_prev=True, exclude=[], 
     if IV_sort and iv_df is not None:
         # Sorting correlation matrix by IV value
         IV = iv_df[['VAR_NAME', 'IV']].drop_duplicates()
-        # IV['VAR_NAME'] = 'WOE_' + IV['VAR_NAME']
+        IV['VAR_NAME'] = IV['VAR_NAME'].apply(lambda x: 'WOE_' + x)
         IV_sort = IV[IV['VAR_NAME'].isin(df.columns)].sort_values(by='IV')['VAR_NAME'].values[::-1]
 
         corr_matrix = corr_matrix[IV_sort]
