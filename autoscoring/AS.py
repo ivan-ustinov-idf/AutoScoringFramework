@@ -305,8 +305,7 @@ def adjust_binning(df, bins_dict):
 
 ################## Correlation and Plots ######################
 def delete_correlated_features(df, cut_off=0.75, is_plot_prev=True, exclude=[], IV_sort=False, iv_df=None):
-    # Create correlation matrix
-    corr_matrix = df.corr().abs()
+    
     # Сортируем матрицу корреляций по значению IV, чтобы удалять признаки с наименьшим IV
     if IV_sort and iv_df is not None:
         # Sorting correlation matrix by IV value
@@ -314,7 +313,10 @@ def delete_correlated_features(df, cut_off=0.75, is_plot_prev=True, exclude=[], 
         IV['VAR_NAME'] = IV['VAR_NAME'].apply(lambda x: 'WOE_' + x)
         IV_sort = IV[IV['VAR_NAME'].isin(df.columns)].sort_values(by='IV')['VAR_NAME'].values[::-1]
 
-        corr_matrix = corr_matrix[IV_sort]
+        corr_matrix = df[IV_sort].corr().abs()
+
+    else:
+        corr_matrix = df.corr().abs()
 
     # Select upper triangle of correlation matrix
     upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(np.bool))
