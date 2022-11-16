@@ -5,8 +5,16 @@ import seaborn as sns
 
 from sklearn import metrics
 from sklearn.metrics import roc_auc_score
+from sklearn.inspection import permutation_importance
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
 
 from copy import deepcopy
+
+from catboost import Pool
+from catboost import CatBoostClassifier, EShapCalcType, EFeaturesSelectionAlgorithm
+
+from autoscoring.lineartree import LinearTreeClassifier
 
 from .AS_2 import var_name_original
 
@@ -41,7 +49,7 @@ def construct_df3_bbox(vars_woe, model, X_train, X_test, df_train, df_test, X_ou
     return df3
 
 
-def feature_exclude_model(X_all, y_all, vars_current, iv_df, base_model):
+def feature_exclude_model(X_all, y_all, vars_current, vars_to_exclude, iv_df, base_model):
 
     # Смотрим что будет, если убрать один признак
     df_var_ginis = pd.DataFrame(columns=['var_name', 'gini_train', 'gini_test'])
@@ -49,7 +57,7 @@ def feature_exclude_model(X_all, y_all, vars_current, iv_df, base_model):
     X_train, X_test, X_out = X_all[0], X_all[1], X_all[2]
     y_train, y_test, y_out = y_all[0], y_all[1], y_all[2]
 
-    for i, var in enumerate(['with all'] + vars_current):
+    for i, var in enumerate(['with all'] + vars_to_exclude):
         __vars_current = np.delete(vars_current, np.where(np.array(vars_current) == var))
 
         model = deepcopy(base_model)
@@ -68,6 +76,130 @@ def feature_exclude_model(X_all, y_all, vars_current, iv_df, base_model):
         df_var_ginis.loc[i, 'IV'] = ', '.join(IV_vars)
 
     return df_var_ginis
+
+
+def gini_univariate_selection(gini_by_vars, cut_off: float=0.6):
+    '''
+    Удаляем нестабильные признаки по значению gini на train/test/out.
+    Если gini на train выборке сильно больше gini на test,
+    или gini на test сильно больше на out, то удаляем признак.
+    
+    cut_off - если различия больше, чем на 60%, то удалим признак.
+
+    '''
+
+    bad_feats_idx = []
+    for i, row in gini_by_vars.iterrows():
+
+        diff_train_test = (row['gini_train'] - row['gini_test']) / row['gini_train']
+        diff_test_out = (row['gini_test'] - row['gini_out']) / row['gini_test']
+
+
+        if diff_train_test >= cut_off or diff_test_out >= cut_off:
+            bad_feats_idx.append(i)
+
+    return gini_by_vars.drop(bad_feats_idx)
+
+
+def calc_woe_target_differences(X_train, X_test, X_out, y_train, y_test, y_out, vars):
+    '''
+    Считаем среднее WOE каждого признака для класса 0 и класса 1.
+    Чем лучше разделяющая способность признака, тем больше разница.
+
+    '''
+
+    woe_differences = []
+    for feat in vars:
+
+        woe_for_0_train = X_train[y_train == 0][feat].mean()
+        woe_for_1_train = X_train[y_train == 1][feat].mean()
+
+        woe_for_0_test = X_test[y_test == 0][feat].mean()
+        woe_for_1_test = X_test[y_test == 1][feat].mean()
+
+        woe_for_0_out = X_out[y_out == 0][feat].mean()
+        woe_for_1_out = X_out[y_out == 1][feat].mean()
+
+        woe_differences.append((
+            feat,
+            woe_for_0_train - woe_for_1_train,
+            woe_for_0_test - woe_for_1_test,
+            woe_for_0_out - woe_for_1_out,
+        ))
+
+    df_woe_diff = pd.DataFrame(woe_differences, columns=['vars', 'woe_diff_train', 'woe_diff_test', 'woe_diff_out'])
+    return df_woe_diff
+
+
+def woe_univariate_selection(df_woe_diff, cut_off: float=0.6):
+    '''
+    Удаляем нестабильные признаки, если разделяющая способность признака
+    сильно упала, то удаляем признак.
+    
+    cut_off - если различия больше, чем на 60%, то удалим признак.
+
+    '''
+
+    bad_feats_idx = []
+    for i, row in df_woe_diff.iterrows():
+
+        diff_train_test = (row['woe_diff_train'] - row['woe_diff_test']) / row['woe_diff_train']
+        diff_test_out = (row['woe_diff_test'] - row['woe_diff_out']) / row['woe_diff_test']
+
+
+        if diff_train_test >= cut_off or diff_test_out >= cut_off:
+            bad_feats_idx.append(i)
+
+    return df_woe_diff.drop(bad_feats_idx)
+
+
+def catboost_feat_selection(X_train, X_test, y_train, y_test,
+                            feats_to_select: list, cat_params: dict=None,
+                            num_features: int=25, steps: int=5):
+    '''
+    Отбор признаков на основе алгоритма RFE реализованного в catboost.
+
+    '''
+    train_pool = Pool(X_train, y_train)
+    test_pool = Pool(X_test, y_test)
+
+    if cat_params is None:
+        model = CatBoostClassifier(eval_metric='AUC', iterations=40, depth=4,
+                                   min_data_in_leaf=X_train.shape[0]*0.025, random_seed=0)
+    else:    
+        model = CatBoostClassifier(**cat_params)
+
+    algorithm = EFeaturesSelectionAlgorithm.RecursiveByShapValues
+
+    summary = model.select_features(
+        train_pool,
+        eval_set=test_pool,
+        features_for_select=feats_to_select,     # we will select from all features
+        num_features_to_select=num_features,  # we want to select exactly important features
+        steps=steps,                                     # more steps - more accurate selection
+        algorithm=algorithm,
+        shap_calc_type=EShapCalcType.Regular,            # can be Approximate, Regular and Exact
+        # train_final_model=True,                          # to train model with selected features
+        logging_level='Silent',
+        # plot=True
+    )
+
+    return summary['selected_features_names']
+
+
+def calc_permutation_importance(model, X, y, n_repeats=100, n_jobs=4):
+    feature_importances_ = permutation_importance(model, X, y, scoring='roc_auc',
+                                                  n_repeats=n_repeats, n_jobs=n_jobs, random_state=123)
+    perm_imp = pd.DataFrame(
+            {
+                'mean_imp': feature_importances_['importances_mean'],
+                'feature': vars_woe
+            }
+        ).sort_values(by='mean_imp', ascending=False)
+    perm_importances = perm_imp['mean_imp'].values
+    perm_imp['percentile_imp'] = perm_imp['mean_imp'].apply(lambda x: stats.percentileofscore(perm_importances, x))   
+
+    return perm_imp
 
 
 def feature_include1_model(X_all, y_all, vars_current, iv_df, base_model):
@@ -345,3 +477,94 @@ def export_to_excel_model(X_train, X_test, y_train, y_test, y, df3, iv_df,
 
     writer.save()
     print ('Exported!')
+
+
+# Оптимизация гиперпараметров, библиотекой OPTUNA.
+def parameters_optimizaion(X_train, X_test, y_train, y_test, params_borders, vars_woe, model_type,
+                           n_trials=1000, n_jobs=2):
+    '''
+    Оптимизируем и подбираем гипермараметры модели.
+    Здесь 3 заранее подготовленных сетапа для каждого типа модели: RandomForest, DecisionTree, LinearTree
+
+
+    '''
+    try:
+        import optuna
+    except:
+        Exception('You dont have optuna library, pip install optuna')
+
+    def objective_tree(trial):
+        # Задаем возможные варианты преебора параметров
+        params = {
+            'max_depth': trial.suggest_int('max_depth', params_borders['max_depth'][0], params_borders['max_depth'][1]),
+            'min_samples_leaf': trial.suggest_float('min_samples_leaf', params_borders['min_samples_leaf'][0], params_borders['min_samples_leaf'][1], step=0.015),
+            'min_impurity_decrease': trial.suggest_float('min_impurity_decrease', params_borders['min_impurity_decrease'][0], params_borders['min_impurity_decrease'][1], step=0.015),
+            'max_features': trial.suggest_categorical('max_features', params_borders['max_features']),
+            'class_weight': params_borders['class_weight'],
+            'random_state': params_borders['random_state'],
+        }
+
+        # Обучаем модель, с учетом разных возможных параметров.
+        _model = DecisionTreeClassifier(**params)
+        _model.fit(X_train[vars_woe], y_train)
+
+        # Считаем метрику, которую будем оптимизировать.
+        predict_proba_test = _model.predict_proba(X_test[vars_woe])[:, 1]
+        return roc_auc_score(y_test, predict_proba_test)
+
+    def objective_random_forest(trial):
+        # Задаем возможные варианты преебора параметров
+        params = {
+            'n_estimators': trial.suggest_int('n_estimators', params_borders['n_estimators'][0], params_borders['n_estimators'][1], step=10),
+            'criterion': trial.suggest_categorical('criterion', params_borders['criterion']),
+            'max_depth': trial.suggest_int('max_depth', params_borders['max_depth'][0], params_borders['max_depth'][1]),
+            'min_samples_leaf': trial.suggest_float('min_samples_leaf', params_borders['min_samples_leaf'][0], params_borders['min_samples_leaf'][1], step=0.015),
+            'min_impurity_decrease': trial.suggest_float('min_impurity_decrease', params_borders['min_impurity_decrease'][0], params_borders['min_impurity_decrease'][1], step=0.015),
+            'max_features': trial.suggest_categorical('max_features', params_borders['max_features']),
+            'class_weight': params_borders['class_weight'],
+            'random_state': params_borders['random_state'],
+            'n_jobs': params_borders['n_jobs'],
+        }
+
+        # Обучаем модель, с учетом разных возможных параметров.
+        _model = RandomForestClassifier(**params)
+        _model.fit(X_train[vars_woe], y_train)
+
+        # Считаем метрику, которую будем оптимизировать.
+        predict_proba_test = _model.predict_proba(X_test[vars_woe])[:, 1]
+        return roc_auc_score(y_test, predict_proba_test)
+
+    def objective_linear_tree(trial):
+        # Задаем возможные варианты преебора параметров
+        params = {
+            'max_depth': trial.suggest_int('max_depth', params_borders['max_depth'][0], params_borders['max_depth'][1]),
+            'min_samples_leaf': trial.suggest_float('min_samples_leaf', params_borders['min_samples_leaf'][0], params_borders['min_samples_leaf'][1], step=0.015),
+            'min_impurity_decrease': trial.suggest_float('min_impurity_decrease', params_borders['min_impurity_decrease'][0], params_borders['min_impurity_decrease'][1], step=0.015),
+            'base_estimator': params_borders['base_estimator'],
+        }
+
+        # Обучаем модель, с учетом разных возможных параметров.
+        _model = LinearTreeClassifier(**params)
+        _model.fit(X_train[vars_woe], y_train)
+
+        # Считаем метрику, которую будем оптимизировать.
+        predict_proba_test = _model.predict_proba(X_test[vars_woe])[:, 1]
+        return roc_auc_score(y_test, predict_proba_test)
+
+    
+    # Выбираем, какой из сетапов будем использовать при оптимизации.
+    if model_type == 'tree':
+        objective = objective_tree
+    elif model_type == 'random_forest':
+        objective = objective_random_forest
+    elif model_type == 'linear_tree':
+        objective = objective_linear_tree
+
+    # Выключаем логгирование
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+    # Задаем задачу оптимизации и запускаем её для заданного количества итераций.
+    study = optuna.create_study(direction='maximize')
+    study.optimize(objective, n_trials=n_trials, n_jobs=n_jobs)
+
+    return study.best_trial.params
