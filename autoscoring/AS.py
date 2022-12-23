@@ -1069,12 +1069,20 @@ def export_to_excel(DSL, SQL, X_train, X_test, y_train, y_test, y, df3, iv_df, i
     feat_names.to_excel(writer, sheet_name='Feat description', index=False)
     worksheet2 = writer.sheets['Feat description']
     worksheet2.set_column('A:A', 35)
+    try:
+        worksheet2.insert_image('E1', pic_folder + 'correlations.png')
+    except:
+        print('There is no "correlation.png" in pic_folder. Cant save this image')
 
     # Regression coefs
     feat.to_excel(writer, sheet_name='Regression coefficients', index=False)
     worksheet2 = writer.sheets['Regression coefficients']
     worksheet2.set_column('A:A', 35)
     worksheet2.set_column('B:B', 25)
+    try:
+        worksheet2.insert_image('E1', pic_folder + 'Feature_Importances.png')
+    except:
+        print('There is no "Feature_Importances.png" in pic_folder. Cant save this image')
 
     # Gini by var
     if gini_by_vars is not None:

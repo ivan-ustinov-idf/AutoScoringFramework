@@ -212,7 +212,7 @@ def preprocessing(df, labl_dict=False, num_min=150, cat_vars=False):
         return df
     
 
-def plot_score(clf, X_test, y_test, X_train, y_train, feat_to_show=30, is_normalize=False, cut_off=0.5):
+def plot_score(clf, X_test, y_test, X_train, y_train, feat_to_show=30, is_normalize=False, cut_off=0.5, pic_folder='pic/'):
     #cm = confusion_matrix(pd.Series(clf.predict_proba(X_test)[:,1]).apply(lambda x: 1 if x>cut_off else 0), y_test)
     print ('ROC_AUC:  ', round(roc_auc_score(y_test, clf.predict_proba(X_test)[:,1]), 3))
     print ('Gini Train:', round(2*roc_auc_score(y_train, clf.predict_proba(X_train)[:,1]) - 1, 3))
@@ -234,7 +234,7 @@ def plot_score(clf, X_test, y_test, X_train, y_train, feat_to_show=30, is_normal
         imp = pd.DataFrame(list(zip(X_test.columns, clf.coef_[0])))
     else:
         imp = pd.DataFrame(list(zip(X_test.columns, clf.feature_importances_)))
-        
+
     imp = imp.reindex(imp[1].abs().sort_values().index).set_index(0)
     imp = imp[-feat_to_show:]
     #график_фич
@@ -244,6 +244,8 @@ def plot_score(clf, X_test, y_test, X_train, y_train, feat_to_show=30, is_normal
     for i, labl in enumerate(list(imp.index)):
         score = imp.loc[labl][1]
         ax.annotate('%.2f' % score, (score + (-.12 if score < 0 else .02), i - .2), fontsize = 10.5)
+    plt.savefig(pic_folder + 'Feature_Importances' + '.png', dpi=60, bbox_inches = "tight")
+    plt.show()
 
 def printmd(string):
         display(Markdown(string))
