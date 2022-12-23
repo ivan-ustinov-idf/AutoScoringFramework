@@ -66,15 +66,95 @@ def woe_transformation(x, iv_col):
     return q
 
 
-def woe_transform_apply(col, series, iv_col):
+def create_dict_cat_feats(iv_df):
+    '''
+    Создание словаря для трансформации категориальоных переменных в WOE
+    Результат будет выглядеть примерно: {'sex': {'M': 0.2, 'W': 0.25, '_MISSING_': 0.15}}
+
+    '''
+    dict_feats = dict()
+
+    for index, row in iv_df.iterrows():
+        if type(row['MIN_VALUE']) == str:
+            keys = row['MIN_VALUE'].split(' | ')
+            woe_values = row['WOE']
+            feat_name = row['VAR_NAME']
+
+            dict_sample = dict.fromkeys(keys, woe_values)        
+
+            if dict_feats.get(feat_name) is None:
+                dict_feats[feat_name] = dict_sample
+            else:
+                dict_feats[feat_name] = dict_feats[feat_name] | dict_sample
+
+    return dict_feats
+
+
+def create_num_intervals(iv_df):
+    iv_df['interval'] = 0
+
+    for index, row in iv_df.iterrows():
+        if RepresentsFloat(row['MIN_VALUE']) is True:
+            if pd.isna(row['MIN_VALUE']) != True:
+                left = float(row['MIN_VALUE'])
+                right = float(row['MAX_VALUE'])
+
+                try:
+                    iv_df['interval'].loc[index] = pd.Interval(left = left, right = right, closed = 'left')
+                except Exception as e:
+                    print(e)
+                    print(f'Error in feature {row["VAR_NAME"]}, index in iv_df = {index}. Left = {left}, right = {right}.')
+                    raise
+    
+    return iv_df
+
+
+def woe_transformation_categorical(col, x, iv_col, dict_feats): 
+    dict_for_one = dict_feats[col]
+    if dict_for_one.get(x) is not None:
+        q = float(dict_for_one[x])
+    else:
+        q = float(dict_for_one['_ELSE_'])
+    return q
+
+             
+def woe_transformation_numbers(x, iv_col):   
+    if pd.isna(x) == True:
+        q = float(iv_col[pd.isna(iv_col.MAX_VALUE) == True].WOE)
+        return q
+    if x >= iv_col.MAX_VALUE.max():
+        # Значение больше максимального бина
+        q = float(iv_col[iv_col.MAX_VALUE == iv_col.MAX_VALUE.max()].WOE)
+    elif x < iv_col.MIN_VALUE.min():
+        # Значение меньше минимального бина
+        q = float(iv_col[iv_col.MIN_VALUE == iv_col.MIN_VALUE.min()].WOE)
+    else:
+        for index, row in iv_col.iterrows():
+            if x in row['interval']:
+                q = float(row.WOE)
+                return q
+
+
+def woe_transform_apply(col, series, iv_col, dict_feats):
     try:
-        res = series.map(lambda x: woe_transformation(x, iv_col))
-        return col, res, 'OK'
+        if series.dtype != object:    
+            res = series.map(lambda x: woe_transformation_numbers(x, iv_col))
+            return col, res, 'OK'
+        else:
+            res = series.map(lambda x: woe_transformation_categorical(col, x, iv_col, dict_feats))
+            return col, res, 'OK'
     except:
         return col, None, 'ERROR'
 
 
-def transform_df_to_woe(df, y, IV, iv_df, iv_cut_off=None, n_jobs=None):
+def transform_df_to_woe(df, y, IV, iv_df, dict_feats=None, iv_cut_off=None, n_jobs=None):
+
+    if dict_feats is None:
+        print('There is noe dict_feats. Call: "dict_feats = create_dict_cat_feats(iv_df)" to create it.')
+        raise
+    if 'interval' not in iv_df.columns:
+        print('There is noe "interval" column in iv_df. Call: "iv_df = create_num_intervals(iv_df)" to create it.')
+        raise
     
     if iv_cut_off is not None:
         df1 = df[list(IV[IV.IV>iv_cut_off].VAR_NAME)].copy()
@@ -92,7 +172,7 @@ def transform_df_to_woe(df, y, IV, iv_df, iv_cut_off=None, n_jobs=None):
 
     # Набор параметров, для вызова функции применительно к одному столбцу переменной.
     params_gen = (
-        (col, df1[col], iv_df[iv_df.VAR_NAME==col]) for col in df1.columns
+        (col, df1[col], iv_df[iv_df.VAR_NAME==col], dict_feats) for col in df1.columns
     )
 
     with Pool(n_jobs) as pool:
@@ -262,6 +342,10 @@ def construction_iv_df_from_autowoe(df, auto_woe, TARGET, features_type, feature
             nan_exist = False  # Если в разбиениях отсутствуют _MISSING_ или _ELSE_, то в конце их вставим для ясности.
             else_exist = False
             for key, val in auto_woe.split_dict[feature].items():
+                if type(key) != str:
+                    print(f'WARNING in feature cat {feature}. Category {key} is not str.\nChanging it for type str')
+                    key = str(key)
+
                 if 'Small' in key:
                     continue
                 if '_MISSING_' in key:

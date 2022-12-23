@@ -335,6 +335,13 @@ def delete_correlated_features(df, cut_off=0.75, is_plot_prev=True, exclude=[], 
         except:
             print ('No highly correlated features found')
 
+        # Plotting final correlations
+        f, ax = plt.subplots(figsize=(15, 10))
+        plt.title('Final correlations', fontsize=20)
+        sns.heatmap(df2.corr(), annot=True)
+        plt.show()
+
+
     # Find index of feature columns with correlation greater than cut_off
     to_drop = [column for column in upper.columns if any(upper[column] > cut_off)]
     to_drop = [column for column in to_drop if column not in exclude]
@@ -343,12 +350,6 @@ def delete_correlated_features(df, cut_off=0.75, is_plot_prev=True, exclude=[], 
     print ('Features left after correlation check: {}'.format(len(df.columns)-len(to_drop)), '\n')    
    
     print ('Not dropped columns:', list(df2.columns), '\n')
-    
-    # Plotting final correlations
-    f, ax = plt.subplots(figsize=(15, 10))
-    plt.title('Final correlations', fontsize=20)
-    sns.heatmap(df2.corr(), annot=True)
-    plt.show()
     
     return df2 
 
@@ -1069,12 +1070,20 @@ def export_to_excel(DSL, SQL, X_train, X_test, y_train, y_test, y, df3, iv_df, i
     feat_names.to_excel(writer, sheet_name='Feat description', index=False)
     worksheet2 = writer.sheets['Feat description']
     worksheet2.set_column('A:A', 35)
+    try:
+        worksheet2.insert_image('E1', pic_folder + 'correlations.png')
+    except:
+        print('There is no "correlation.png" in pic_folder. Cant save this image')
 
     # Regression coefs
     feat.to_excel(writer, sheet_name='Regression coefficients', index=False)
     worksheet2 = writer.sheets['Regression coefficients']
     worksheet2.set_column('A:A', 35)
     worksheet2.set_column('B:B', 25)
+    try:
+        worksheet2.insert_image('E1', pic_folder + 'Feature_Importances.png')
+    except:
+        print('There is no "Feature_Importances.png" in pic_folder. Cant save this image')
 
     # Gini by var
     if gini_by_vars is not None:
@@ -1140,6 +1149,7 @@ def export_to_excel(DSL, SQL, X_train, X_test, y_train, y_test, y, df3, iv_df, i
     except: print ('Error! - SQL')
     writer.save()
     print ('Exported!')
+
 
 def splitDataFrameList(df, target_column, separator): 
     row_accumulator = []
