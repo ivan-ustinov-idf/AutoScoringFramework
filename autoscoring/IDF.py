@@ -234,7 +234,7 @@ def plot_score(clf, X_test, y_test, X_train, y_train, feat_to_show=30, is_normal
         imp = pd.DataFrame(list(zip(X_test.columns, clf.coef_[0])))
     else:
         imp = pd.DataFrame(list(zip(X_test.columns, clf.feature_importances_)))
-        
+
     imp = imp.reindex(imp[1].abs().sort_values().index).set_index(0)
     imp = imp[-feat_to_show:]
     #график_фич
