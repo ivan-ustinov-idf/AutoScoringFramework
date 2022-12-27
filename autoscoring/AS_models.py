@@ -3,6 +3,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+import scipy.stats as stats
+
 from sklearn import metrics
 from sklearn.metrics import roc_auc_score
 from sklearn.inspection import permutation_importance
@@ -193,7 +195,7 @@ def calc_permutation_importance(model, X, y, n_repeats=100, n_jobs=4):
     perm_imp = pd.DataFrame(
             {
                 'mean_imp': feature_importances_['importances_mean'],
-                'feature': vars_woe
+                'feature': X.columns
             }
         ).sort_values(by='mean_imp', ascending=False)
     perm_importances = perm_imp['mean_imp'].values
