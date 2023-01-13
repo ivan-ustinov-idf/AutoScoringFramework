@@ -125,9 +125,11 @@ def woe_transformation_numbers(x, iv_col):
     if x >= iv_col.MAX_VALUE.max():
         # Значение больше максимального бина
         q = float(iv_col[iv_col.MAX_VALUE == iv_col.MAX_VALUE.max()].WOE)
+        return q
     elif x < iv_col.MIN_VALUE.min():
         # Значение меньше минимального бина
         q = float(iv_col[iv_col.MIN_VALUE == iv_col.MIN_VALUE.min()].WOE)
+        return q
     else:
         for index, row in iv_col.iterrows():
             if x in row['interval']:
