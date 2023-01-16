@@ -85,7 +85,7 @@ def create_dict_cat_feats(iv_df):
             if dict_feats.get(feat_name) is None:
                 dict_feats[feat_name] = dict_sample
             else:
-                dict_feats[feat_name] = dict_feats[feat_name].update(dict_sample)
+                dict_feats[feat_name].update(dict_sample)
 
     return dict_feats
 
