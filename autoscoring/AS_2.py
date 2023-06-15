@@ -998,3 +998,125 @@ def feature_include_correlated(X_all, y_all, curr_var, vars_woe, params, connect
             df_var_ginis.loc[i, 'gini_out'] =  2 * roc_auc_score(y_out, predict_proba_out) - 1 
 
     return df_var_ginis
+
+
+def visualize_decision_trees(
+    df: pd.DataFrame,
+    vars: list[str],
+    TARGET: str,
+    num_forests: int = 1,
+    min_samples_leaf: int = 60,
+    max_depth: int = 3,
+    percent_feat: float = 1.,
+    pic_name: str = 'result_rules/example_tree_structure_0_v',
+    show_image: bool = True,
+    full_info: bool = True,
+    ) -> None:
+    """
+    Функция для построения и визуализации нескольких деревьев решений.
+
+    Параметры:
+        Обязательные:
+            - df (DataFrame): Исходный DataFrame, содержащий данные для обучения модели.
+            - vars (list): Список признаков, используемых для обучения модели.
+            - TARGET (str): Имя целевой переменной.
+        Опциональные:
+            - num_forests (int): Количество деревьев с разными случайными наборами признаков. По умолчанию 1.
+            - min_samples_leaf (int): Минимальное количество объектов в одном листе дерева. По умолчанию 60.
+            - max_depth (int): Максимальная глубина дерева. По умолчанию 3.
+            - percent_feat (float): Процент признаков, который брать для построения нового дерева. По умолчанию 1.0.
+            - pic_name (str): Путь и имя для сохранения изображения. По умолчанию 'result_rules/example_tree_structure_0_v'.
+            - show_image (bool): Параметр для отображения или не отображения картинки. По умолчанию True.
+            - full_info (bool): Параметр для вывода полной информации в узлах или только условие, Gini, Samples, Value. По умолчанию True.
+
+    Визуализирует несколько деревьев решений, построенных на основе заданных параметров, и добавляет информацию к каждому узлу.
+
+    Каждое дерево отображается на отдельной подуровне фигуры. Для каждого узла дерева выводится следующая информация:
+    - Если full_info=True:
+        - Условие разделения узла (по признаку и пороговому значению).
+        - Количество объектов в узле.
+        - Значение целевой переменной в узле.
+        - Доля объектов, относящихся к данному узлу от общего числа объектов.
+        - Доля объектов с отрицательным значением целевой переменной (плохие объекты) от общего числа объектов в узле.
+    - Если full_info=False:
+        - Условие разделения узла (по признаку и пороговому значению).
+        - Значение Gini-индекса узла.
+        - Количество объектов в узле.
+        - Значение целевой переменной в узле.
+
+    Если параметр show_image установлен в True (по умолчанию), изображение с деревьями будет отображено и сохранено.
+    Если параметр show_image установлен в False, изображение будет сохранено по указанному пути и имени.
+
+    Пример использования:
+    visualize_decision_trees(df, vars, TARGET, num_forests=4,
+                            min_samples_leaf=60, max_depth=3, percent_feat=0.7,
+                            pic_name='result_rules/example_tree_structure2_v.png',
+                            show_image=True, full_info=True)
+    """
+    from sklearn.tree import DecisionTreeClassifier
+    from sklearn import tree
+    from sklearn.tree import plot_tree
+
+    # Функции для вычисления информации о сегменте и плохом отношении для узла
+    def calculate_segment_info(clf_tree, node_id, df):
+        sample_count = clf_tree.tree_.n_node_samples[node_id]
+        class_count = clf_tree.tree_.value[node_id][0]
+        segment_share = sample_count / len(df)
+        bad_rate = class_count[1] / (class_count[0] + class_count[1])
+        return segment_share, bad_rate
+
+    # Функция для получения условия разделения узла
+    def get_node_condition(clf_tree, node_id, vars):
+        feature = clf_tree.tree_.feature[node_id]
+        threshold = clf_tree.tree_.threshold[node_id]
+        if feature != -2:
+            feature_name = vars[feature]
+            condition = f"{feature_name} <= {threshold:.3f}"
+        else:
+            condition = "Leaf"
+        return condition
+
+    # Функция для добавления информации к узлу
+    def add_node_info(text, segment_share, bad_rate, condition, gini, samples, value, full_info):
+        if full_info:
+            info_text = f"{condition}\nSamples: {samples}\nValue: {list(map(int, value))}\nSegment Share: {segment_share:.2%}\nBad Rate: {bad_rate:.2%}"
+        else:
+            info_text = f"{condition}\nGini: {gini:.3f}\nSamples: {samples}\nValue: {list(map(int, value))}"
+        text.set_text(info_text)
+
+    # Создание и обучение классификатора деревьев решений
+    clf_trees = []
+    for i in range(num_forests):
+        clf_tree = DecisionTreeClassifier(
+            max_depth=max_depth,
+            min_samples_leaf=min_samples_leaf,
+            max_features=int(percent_feat * len(vars)),
+            random_state=i + 142
+        )
+        clf_tree.fit(df[vars], df[TARGET])
+        clf_trees.append(clf_tree)
+
+        # Сохранение каждого дерева на отдельной картинке
+        fig, ax = plt.subplots(figsize=(100, 80))
+        plot_tree(
+            clf_tree,
+            feature_names=vars,
+            ax=ax,
+            impurity=True,
+            rounded=True
+        )
+
+        # Добавление информации к каждому узлу (включая корневой узел)
+        nodes = ax.get_children()[1:]  # Исключение корневого узла
+        for j, text in enumerate(ax.texts):
+            segment_share, bad_rate = calculate_segment_info(clf_tree, j, df)
+            condition = get_node_condition(clf_tree, j, vars)
+            gini = clf_tree.tree_.impurity[j]
+            samples = clf_tree.tree_.n_node_samples[j]
+            value = clf_tree.tree_.value[j][0]
+            add_node_info(text, segment_share, bad_rate, condition, gini, samples, value, full_info)
+
+        plt.savefig(f"{pic_name}{i}.png")
+        if show_image:
+            plt.show()
+        plt.close()

@@ -479,8 +479,34 @@ def gini_stability_chart(Ginis, pic_name='gini_stability', pic_folder='', period
     plt.savefig(pic_folder + pic_name + '.png', dpi=100)
     plt.show()
     
-def score_stability_graph(table, pic_name='score_distribution', pic_folder=''):
-    ax = table.div(table.sum(1)/100,0).plot(kind='bar', stacked=True, figsize=(10, 7), title='Score Distribution Stability')
+def score_stability_graph(table, pic_name='score_distribution', pic_folder='',
+                          month_num=0, add_psi=False):
+    ax1 = table.div(table.sum(1)/100,0).plot(kind='bar', stacked=True, figsize=(10, 7), title='Score Distribution Stability')
+    ax1.set_ylabel('Score', fontsize=15)
+
+    try:
+        from psi import calculate_psi
+    except:
+        from autoscoring.psi import calculate_psi
+
+    if add_psi:
+        # Считаем PSI для бакетов скора
+        months = sorted(list(table.index))
+        q = list()
+        for i in range(len(months)):
+            actual_vals = table.loc[months[i]].values
+            expected_vals = table.loc[months[month_num]].values
+            q.append(calculate_psi(actual_vals, expected_vals) / 100)
+
+        table['psi'] = q
+
+        ax2 = ax1.twinx()
+        ax2.plot(table.index, [0.2]*len(table.index), color='red')
+        ax2.plot(table.index, list(table['psi']), color='red', marker='o',markersize=10, linewidth=4)
+        ax2.set_ylabel('PSI', fontsize=15)
+
+        plt.ylim([0, 0.3])
+
     plt.savefig(pic_folder + pic_name + '.png', dpi=100)
     plt.show()
     
