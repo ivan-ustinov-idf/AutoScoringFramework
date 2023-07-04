@@ -1002,7 +1002,7 @@ def feature_include_correlated(X_all, y_all, curr_var, vars_woe, params, connect
 
 def visualize_decision_trees(
     df: pd.DataFrame,
-    vars: list[str],
+    vars: List[str],
     TARGET: str,
     num_forests: int = 1,
     min_samples_leaf: int = 60,
