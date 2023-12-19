@@ -1129,6 +1129,16 @@ def export_to_excel(DSL, SQL, X_train, X_test, y_train, y_test, y, df3, iv_df, i
         worksheet2.set_column('A:A', 35)
         worksheet2.set_column('B:B', 15)
 
+    worksheet2 = workbook.add_worksheet('ROC and PR curves')
+    try:
+        worksheet2.insert_image('B2', pic_folder + 'roc_curve.png')
+    except Exception as e:
+        print("Can't find pic/roc_curve.png")
+    try:
+        worksheet2.insert_image('B41', pic_folder + 'PR_curve.png')
+    except Exception as e:
+        print("Can't find pic/PR_curve.png")
+
     #WOE
     ivs[['VAR_NAME', 'Variable range', 'WOE', 'COUNT', 'WOE_group']].to_excel(writer, sheet_name='WOE', index=False)
     worksheet3 = writer.sheets['WOE']

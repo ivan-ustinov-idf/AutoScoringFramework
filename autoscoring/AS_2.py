@@ -11,6 +11,8 @@ from sklearn.svm import OneClassSVM
 from scipy.spatial.distance import mahalanobis
 from sklearn.decomposition import PCA
 from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import precision_recall_curve
+import sklearn.metrics as metrics
 import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import List, Tuple, Dict
@@ -538,6 +540,135 @@ def gini_univariate(X_train: pd.DataFrame, X_test: pd.DataFrame, X_out: pd.DataF
 
     return gini_by_vars
 
+# Отрисовка PR-кривой для таргета и PD модели
+def plot_PR_curve(model, vars_woe, X_train, y_train, X_test, y_test,
+                     X_out, y_out, pic_folder='pic/'):
+
+    X_all = pd.concat([X_train, X_test, X_out], axis=0).reset_index(drop=True)
+    y_all = pd.concat([y_train, y_test, y_out], axis=0).reset_index(drop=True)
+
+    preds_train = model.predict_proba(X_train[vars_woe])[:,1]
+    preds_test = model.predict_proba(X_test[vars_woe])[:,1]
+    preds_out = model.predict_proba(X_out[vars_woe])[:,1]
+    preds_all = model.predict_proba(X_all[vars_woe])[:,1]
+    precision_train, recall_train, thresholds_train = precision_recall_curve(y_train, preds_train)
+    precision_test, recall_test, thresholds_test = precision_recall_curve(y_test, preds_test)
+    precision_out, recall_out, thresholds_out = precision_recall_curve(y_out, preds_out)
+    precision_all, recall_all, thresholds_all = precision_recall_curve(y_all, preds_all)
+
+    fig = plt.figure(figsize=(12, 8))
+    fig.suptitle('Precision Recall curve')
+
+    plt.xlabel('Recall')
+    plt.ylabel('Precision')
+
+    plt.subplot(221)
+    plt.title('Train')
+    plt.plot(recall_train, precision_train)
+    plt.grid(True)
+    plt.xlim([0, 1])
+    plt.ylim([0, 1])
+
+    plt.subplot(222)
+    plt.title('Test')
+    plt.plot(recall_test, precision_test)
+    plt.grid(True)
+    plt.xlim([0, 1])
+    plt.ylim([0, 1])
+
+    plt.subplot(223)
+    plt.title('Out')
+    plt.plot(recall_out, precision_out)
+    plt.grid(True)
+    plt.xlim([0, 1])
+    plt.ylim([0, 1])
+
+    plt.subplot(224)
+    plt.title('Train + Test + Out')
+    plt.plot(recall_all, precision_all)
+    plt.grid(True)
+    plt.xlim([0, 1])
+    plt.ylim([0, 1])
+
+    # Set common labels
+    fig.text(0.5, 0.04, 'Recall', ha='center', va='center')
+    fig.text(0.06, 0.5, 'Precision', ha='center', va='center', rotation='vertical')
+
+    pic_name = 'PR_curve'
+    plt.savefig(pic_folder + pic_name + '.png', dpi=100)
+    plt.show()
+
+
+# Вывести ROC-кривую, можно по train/test/out, можно по всем вместе
+def plot_roc_curve(model, vars, X_train, y_train, X_test, y_test,
+                     X_out=None, y_out=None, pic_folder='pic/'):
+
+    X_all = pd.concat([X_train, X_test, X_out], axis=0).reset_index(drop=True)
+    y_all = pd.concat([y_train, y_test, y_out], axis=0).reset_index(drop=True)
+
+    preds_train = model.predict_proba(X_train[vars])[:,1]
+    preds_test = model.predict_proba(X_test[vars])[:,1]
+    preds_out = model.predict_proba(X_out[vars])[:,1]
+    preds_all = model.predict_proba(X_all[vars])[:,1]
+    fpr_train, tpr_train, _ = metrics.roc_curve(y_train, preds_train)
+    fpr_test, tpr_test, _ = metrics.roc_curve(y_test, preds_test)
+    fpr_out, tpr_out, _ = metrics.roc_curve(y_out, preds_out)
+    fpr_all, tpr_all, _ = metrics.roc_curve(y_all, preds_all)
+
+    roc_auc_train = round(metrics.auc(fpr_train, tpr_train), 3)
+    roc_auc_test = round(metrics.auc(fpr_test, tpr_test), 3)
+    roc_auc_out = round(metrics.auc(fpr_out, tpr_out), 3)
+    roc_auc_all = round(metrics.auc(fpr_all, tpr_all), 3)
+    gini_train = round(2 * roc_auc_train - 1, 3)
+    gini_test = round(2 * roc_auc_test - 1, 3)
+    gini_out = round(2 * roc_auc_out - 1, 3)
+    gini_all = round(2 * roc_auc_all - 1, 3)
+
+    fig = plt.figure(figsize=(12, 8))
+    fig.suptitle('Receiver Operating Characteristic')
+
+    plt.ylabel('True Positive Rate')
+    plt.xlabel('False Positive Rate')
+
+    plt.subplot(221)
+    plt.title('Train')
+    plt.plot(fpr_train, tpr_train, 'b', label = f'AUC = {roc_auc_train}\nGini = {gini_train}')
+    plt.legend(loc = 'lower right')
+    plt.plot([0, 1], [0, 1],'r--')
+    plt.xlim([0, 1])
+    plt.ylim([0, 1])
+
+    plt.subplot(222)
+    plt.title('Test')
+    plt.plot(fpr_test, tpr_test, 'b', label = f'AUC = {roc_auc_test}\nGini = {gini_test}')
+    plt.legend(loc = 'lower right')
+    plt.plot([0, 1], [0, 1],'r--')
+    plt.xlim([0, 1])
+    plt.ylim([0, 1])
+
+    plt.subplot(223)
+    plt.title('Out')
+    plt.plot(fpr_out, tpr_out, 'b', label = f'AUC = {roc_auc_out}\nGini = {gini_out}')
+    plt.legend(loc = 'lower right')
+    plt.plot([0, 1], [0, 1],'r--')
+    plt.xlim([0, 1])
+    plt.ylim([0, 1])
+
+    plt.subplot(224)
+    plt.title('Train + Test + Out')
+    plt.plot(fpr_all, tpr_all, 'b', label = f'AUC = {roc_auc_all}\nGini = {gini_all}')
+    plt.legend(loc = 'lower right')
+    plt.plot([0, 1], [0, 1],'r--')
+    plt.xlim([0, 1])
+    plt.ylim([0, 1])
+
+    # Set common labels
+    fig.text(0.5, 0.04, 'False Positive Rate', ha='center', va='center')
+    fig.text(0.06, 0.5, 'True Positive Rate', ha='center', va='center', rotation='vertical')
+
+    pic_name = 'roc_curve'
+    plt.savefig(pic_folder + pic_name + '.png', dpi=100)
+    plt.show()
 
 def feature_exclude(X_all, y_all, vars_current, iv_df, params, sample_weight=None):
     # Смотрим что будет, если убрать один признак
