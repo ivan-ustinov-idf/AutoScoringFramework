@@ -319,7 +319,7 @@ def delete_correlated_features(df, cut_off=0.75, is_plot_prev=True, exclude=[], 
         corr_matrix = df.corr().abs()
 
     # Select upper triangle of correlation matrix
-    upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(np.bool))
+    upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
     
     if is_plot_prev:
         # Plotting All correlations
@@ -1093,9 +1093,12 @@ def export_to_excel(DSL, SQL, X_train, X_test, y_train, y_test, y, df3, iv_df, i
 
     # Sheet for feature description
     feat_names = pd.DataFrame(feat['Feature'].apply(lambda x: x.replace('WOE_', ''))[:-1], columns=['Feature'])
-    feat_names.to_excel(writer, sheet_name='Feat description', index=False)
+    merge_data = pd.merge(feat_names, iv_df, left_on='Feature', right_on='VAR_NAME', how='left')
+    merge_data = merge_data.drop('VAR_NAME', axis = 1)
+    merge_data = merge_data.groupby('Feature')['IV'].first().reset_index()
+    merge_data.to_excel(writer, sheet_name='Feat description', index=False)
     worksheet2 = writer.sheets['Feat description']
-    worksheet2.set_column('A:A', 35)
+    worksheet2.set_column('A:B', 35)
     try:
         worksheet2.insert_image('E1', pic_folder + 'correlations.png')
     except:
